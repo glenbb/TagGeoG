@@ -3,15 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Photo Location Logger</title>
+    <title>Photo Location Logger (Watermarked)</title>
     <style>
-        /* Base Reset & Typography */
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
         body { background-color: #f0f2f5; padding: 20px; color: #333; }
         .container { max-width: 600px; margin: 0 auto; }
         h1 { text-align: center; margin-bottom: 20px; color: #1a1a1a; }
         
-        /* Form Card */
         .card { background: #ffffff; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 30px; }
         .form-group { margin-bottom: 15px; }
         label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 0.9em; }
@@ -19,18 +17,15 @@
             width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1em; 
         }
         
-        /* Buttons */
         .btn-group { display: flex; gap: 10px; margin-top: 10px; }
         button { flex: 1; padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 1em; transition: opacity 0.2s; }
         button:hover { opacity: 0.9; }
         .btn-primary { background-color: #0066cc; color: white; }
         .btn-secondary { background-color: #28a745; color: white; }
         
-        /* Generated Entries */
         .entry { background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 25px; display: flex; flex-direction: column; gap: 15px; }
         .entry-header { border-bottom: 1px solid #eee; padding-bottom: 10px; }
         .entry-header h3 { margin: 0 0 5px 0; color: #0066cc; }
-        .entry-meta { font-size: 0.9em; color: #555; line-height: 1.5; }
         .entry-photo { width: 100%; height: auto; border-radius: 8px; border: 1px solid #e0e0e0; }
         .entry-map { width: 100%; height: 300px; border: none; border-radius: 8px; background: #e9ecef; }
     </style>
@@ -79,12 +74,10 @@
     const form = document.getElementById('photo-form');
     const entriesFeed = document.getElementById('entries-feed');
 
-    // 1. Fetch Location natively using HTML5 Geolocation API
+    // Fetch Location
     getLocationBtn.addEventListener('click', () => {
         if (navigator.geolocation) {
-            // Change button text to indicate loading
             getLocationBtn.textContent = 'Locating...';
-            
             navigator.geolocation.getCurrentPosition(
                 (position) => {
                     latInput.value = position.coords.latitude;
@@ -101,7 +94,7 @@
         }
     });
 
-    // 2. Handle form submission
+    // Handle form submission and Canvas drawing
     form.addEventListener('submit', (e) => {
         e.preventDefault();
         
@@ -109,60 +102,84 @@
         const lat = document.getElementById('lat').value;
         const lon = document.getElementById('lon').value;
         const photoInput = document.getElementById('photo');
-        
-        // Generate native timestamp
         const timestamp = new Date().toLocaleString();
 
-        // 3. Process the image file natively
         if (photoInput.files && photoInput.files[0]) {
             const reader = new FileReader();
             
             reader.onload = function(event) {
-                // The image data converted to a Base64 string
-                const photoDataUrl = event.target.result;
-                
-                // Construct the UI entry
-                appendEntry(name, lat, lon, timestamp, photoDataUrl);
-                
-                // Clear the form
-                form.reset();
+                const img = new Image();
+                img.onload = function() {
+                    // Create an in-memory canvas
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    
+                    // Match canvas dimensions to the uploaded image
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    
+                    // Draw the original image onto the canvas
+                    ctx.drawImage(img, 0, 0);
+                    
+                    // Configure text scaling based on image width
+                    const fontSize = Math.max(16, Math.floor(canvas.width * 0.03));
+                    ctx.font = `${fontSize}px sans-serif`;
+                    const padding = fontSize;
+                    const lineSpacing = fontSize * 1.4;
+                    
+                    const lines = [
+                        name,
+                        `Lat: ${lat}, Lon: ${lon}`,
+                        timestamp
+                    ];
+                    
+                    // Draw a semi-transparent background box at the bottom for readability
+                    const boxHeight = (lines.length * lineSpacing) + padding;
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
+                    ctx.fillRect(0, canvas.height - boxHeight, canvas.width, boxHeight);
+                    
+                    // Draw the text over the background box
+                    ctx.fillStyle = '#ffffff';
+                    ctx.textBaseline = 'top';
+                    lines.forEach((line, index) => {
+                        ctx.fillText(line, padding, canvas.height - boxHeight + (padding / 2) + (index * lineSpacing));
+                    });
+                    
+                    // Convert canvas back to a displayable Base64 image URL
+                    const watermarkedImage = canvas.toDataURL('image/jpeg', 0.9);
+                    
+                    // Append to the DOM
+                    appendEntry(name, lat, lon, watermarkedImage);
+                    form.reset();
+                };
+                // Trigger the image load
+                img.src = event.target.result;
             };
-            
-            // Trigger the reading of the file
             reader.readAsDataURL(photoInput.files[0]);
         }
     });
 
-    // 4. Create and inject the new elements into the DOM
-    function appendEntry(name, lat, lon, timestamp, photoDataUrl) {
+    // Create and inject the new elements into the DOM
+    function appendEntry(name, lat, lon, photoDataUrl) {
         const entryDiv = document.createElement('div');
         entryDiv.className = 'entry';
 
-        // Calculate a slight bounding box buffer so the OpenStreetMap iframe centers properly around the pin
         const fLat = parseFloat(lat);
         const fLon = parseFloat(lon);
         const bbox = `${fLon - 0.01},${fLat - 0.01},${fLon + 0.01},${fLat + 0.01}`;
-        
-        // OpenStreetMap embed URL (Requires no API keys/CDNs)
         const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lon}`;
 
         entryDiv.innerHTML = `
             <div class="entry-header">
                 <h3>${name}</h3>
-                <div class="entry-meta">
-                    <strong>Coordinates:</strong> ${lat}, ${lon} <br>
-                    <strong>Time Appended:</strong> ${timestamp}
-                </div>
             </div>
-            <img class="entry-photo" src="${photoDataUrl}" alt="User uploaded photo">
+            <img class="entry-photo" src="${photoDataUrl}" alt="Watermarked location photo">
             <iframe class="entry-map" src="${mapUrl}"></iframe>
         `;
 
-        // Prepend places the newest entry at the top
         entriesFeed.prepend(entryDiv);
     }
 </script>
 
 </body>
 </html>
-
