@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Photo Location Logger</title>
+    <style>
+        /* Base Reset & Typography */
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+        body { background-color: #f0f2f5; padding: 20px; color: #333; }
+        .container { max-width: 600px; margin: 0 auto; }
+        h1 { text-align: center; margin-bottom: 20px; color: #1a1a1a; }
+        
+        /* Form Card */
+        .card { background: #ffffff; padding: 25px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 30px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 0.9em; }
+        input[type="text"], input[type="number"], input[type="file"] { 
+            width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 1em; 
+        }
+        
+        /* Buttons */
+        .btn-group { display: flex; gap: 10px; margin-top: 10px; }
+        button { flex: 1; padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; font-size: 1em; transition: opacity 0.2s; }
+        button:hover { opacity: 0.9; }
+        .btn-primary { background-color: #0066cc; color: white; }
+        .btn-secondary { background-color: #28a745; color: white; }
+        
+        /* Generated Entries */
+        .entry { background: #ffffff; padding: 20px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 25px; display: flex; flex-direction: column; gap: 15px; }
+        .entry-header { border-bottom: 1px solid #eee; padding-bottom: 10px; }
+        .entry-header h3 { margin: 0 0 5px 0; color: #0066cc; }
+        .entry-meta { font-size: 0.9em; color: #555; line-height: 1.5; }
+        .entry-photo { width: 100%; height: auto; border-radius: 8px; border: 1px solid #e0e0e0; }
+        .entry-map { width: 100%; height: 300px; border: none; border-radius: 8px; background: #e9ecef; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>Photo Location Logger</h1>
+    
+    <div class="card">
+        <form id="photo-form">
+            <div class="form-group">
+                <label for="name">Location / Event Name:</label>
+                <input type="text" id="name" required placeholder="e.g., Hiking trip at the canyon">
+            </div>
+            
+            <div class="form-group">
+                <label for="lat">Latitude:</label>
+                <input type="number" id="lat" step="any" required placeholder="e.g., 34.0522">
+            </div>
+            
+            <div class="form-group">
+                <label for="lon">Longitude:</label>
+                <input type="number" id="lon" step="any" required placeholder="e.g., -118.2437">
+            </div>
+
+            <div class="form-group">
+                <label for="photo">Select Photo:</label>
+                <input type="file" id="photo" accept="image/*" required>
+            </div>
+            
+            <div class="btn-group">
+                <button type="button" id="get-location" class="btn-secondary">Get Current Location</button>
+                <button type="submit" class="btn-primary">Add Entry</button>
+            </div>
+        </form>
+    </div>
+
+    <div id="entries-feed"></div>
+</div>
+
+<script>
+    const getLocationBtn = document.getElementById('get-location');
+    const latInput = document.getElementById('lat');
+    const lonInput = document.getElementById('lon');
+    const form = document.getElementById('photo-form');
+    const entriesFeed = document.getElementById('entries-feed');
+
+    // 1. Fetch Location natively using HTML5 Geolocation API
+    getLocationBtn.addEventListener('click', () => {
+        if (navigator.geolocation) {
+            // Change button text to indicate loading
+            getLocationBtn.textContent = 'Locating...';
+            
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    latInput.value = position.coords.latitude;
+                    lonInput.value = position.coords.longitude;
+                    getLocationBtn.textContent = 'Get Current Location';
+                },
+                (error) => {
+                    alert('Error getting location. Please check browser permissions.');
+                    getLocationBtn.textContent = 'Get Current Location';
+                }
+            );
+        } else {
+            alert('Geolocation is not supported by your browser.');
+        }
+    });
+
+    // 2. Handle form submission
+    form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        
+        const name = document.getElementById('name').value;
+        const lat = document.getElementById('lat').value;
+        const lon = document.getElementById('lon').value;
+        const photoInput = document.getElementById('photo');
+        
+        // Generate native timestamp
+        const timestamp = new Date().toLocaleString();
+
+        // 3. Process the image file natively
+        if (photoInput.files && photoInput.files[0]) {
+            const reader = new FileReader();
+            
+            reader.onload = function(event) {
+                // The image data converted to a Base64 string
+                const photoDataUrl = event.target.result;
+                
+                // Construct the UI entry
+                appendEntry(name, lat, lon, timestamp, photoDataUrl);
+                
+                // Clear the form
+                form.reset();
+            };
+            
+            // Trigger the reading of the file
+            reader.readAsDataURL(photoInput.files[0]);
+        }
+    });
+
+    // 4. Create and inject the new elements into the DOM
+    function appendEntry(name, lat, lon, timestamp, photoDataUrl) {
+        const entryDiv = document.createElement('div');
+        entryDiv.className = 'entry';
+
+        // Calculate a slight bounding box buffer so the OpenStreetMap iframe centers properly around the pin
+        const fLat = parseFloat(lat);
+        const fLon = parseFloat(lon);
+        const bbox = `${fLon - 0.01},${fLat - 0.01},${fLon + 0.01},${fLat + 0.01}`;
+        
+        // OpenStreetMap embed URL (Requires no API keys/CDNs)
+        const mapUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat},${lon}`;
+
+        entryDiv.innerHTML = `
+            <div class="entry-header">
+                <h3>${name}</h3>
+                <div class="entry-meta">
+                    <strong>Coordinates:</strong> ${lat}, ${lon} <br>
+                    <strong>Time Appended:</strong> ${timestamp}
+                </div>
+            </div>
+            <img class="entry-photo" src="${photoDataUrl}" alt="User uploaded photo">
+            <iframe class="entry-map" src="${mapUrl}"></iframe>
+        `;
+
+        // Prepend places the newest entry at the top
+        entriesFeed.prepend(entryDiv);
+    }
+</script>
+
+</body>
+</html>
+
